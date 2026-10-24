@@ -1,0 +1,9 @@
+include SKILL.md README.md CONTRIBUTING.md SECURITY.md LICENSE requirements.txt
+include .gitignore .gitattributes REFACTOR_PLAN.md VALIDATION.md
+recursive-include references *.md
+recursive-include agents *.yaml
+recursive-include scripts *.py
+recursive-include tests *.py
+recursive-include .github *.yml
+global-exclude __pycache__ *.py[cod] *.part
+

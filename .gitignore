@@ -1,0 +1,34 @@
+# Local credentials and browser sessions
+.course-resource-download/
+credentials.json
+*state*.json
+.env
+.env.*
+!.env.example
+_manifest.json
+_discovery.json
+.download.lock*
+*.part
+_cap_*
+_panel.png
+downloads/
+out/
+
+# Python and development tools
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+build/
+dist/
+*.skill
+*.whl
+.test-tmp*/
+.build-tmp/
+*.log
+

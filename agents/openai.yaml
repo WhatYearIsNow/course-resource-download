@@ -1,0 +1,4 @@
+interface:
+  display_name: "课程资源下载"
+  short_description: "枚举和下载智慧树课件，校验本地文件并记录权限限制与失败项"
+  default_prompt: "使用 $course-resource-download 枚举这门课的资料，按我的要求下载并校验，列出未完成项。"

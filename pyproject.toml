@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "course-resource-download"
+version = "0.2.0a2"
+description = "Permission-aware course document discovery, download and verification"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "course-resource-download contributors"}]
+dependencies = ["pypdf>=4"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: OS Independent",
+  "Topic :: Education",
+]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.40"]
+captcha = ["opencv-python>=4.8", "numpy>=1.24"]
+dev = ["pytest>=8", "coverage>=7", "ruff>=0.9", "build>=1.2", "wheel>=0.45"]
+
+[project.scripts]
+course-resource-download = "course_resource_download.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--import-mode=importlib -ra"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.coverage.run]
+source = ["course_resource_download"]
+branch = true
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
