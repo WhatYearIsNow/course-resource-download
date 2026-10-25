@@ -165,3 +165,5 @@ python -m build --sdist --wheel
 ## 许可证
 
 代码以 [MIT License](LICENSE) 发布。课程资料与平台内容的权利归各自权利人；项目许可证不授予课程内容的再分发权。
+
+开发、测试、候选构建和回退约定见[维护流程](MAINTENANCE.md)。

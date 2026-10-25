@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -24,7 +24,7 @@ classifiers = [
 [project.optional-dependencies]
 browser = ["playwright>=1.40"]
 captcha = ["opencv-python>=4.8", "numpy>=1.24"]
-dev = ["pytest>=8", "coverage>=7", "ruff>=0.9", "build>=1.2", "wheel>=0.45"]
+dev = ["pytest==9.0.2", "coverage==7.10.7", "ruff==0.14.1", "build==1.6.1", "wheel==0.45.1"]
 
 [project.scripts]
 course-resource-download = "course_resource_download.cli:main"
@@ -38,8 +38,15 @@ pythonpath = ["src"]
 addopts = "--import-mode=importlib -ra"
 
 [tool.ruff]
+required-version = "==0.14.1"
 target-version = "py310"
 line-length = 100
+force-exclude = true
+extend-exclude = ["fixtures", "node_modules", ".venv*", "build", "dist", ".course-resource-download"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+line-ending = "lf"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "UP"]

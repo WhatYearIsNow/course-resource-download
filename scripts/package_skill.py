@@ -17,6 +17,10 @@ ROOT_FILES = {
     ".gitattributes",
     "REFACTOR_PLAN.md",
     "VALIDATION.md",
+    ".editorconfig",
+    "requirements-dev.txt",
+    "maintenance.json",
+    "MAINTENANCE.md",
 }
 TREES = {
     "src": {".py"},

@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "project": "course-resource-download",
+  "skillName": "course-resource-download",
+  "baseline": [
+    [
+      "{python}",
+      "-B",
+      "-m",
+      "pytest",
+      "-q"
+    ]
+  ],
+  "test": [
+    [
+      "{python}",
+      "-m",
+      "coverage",
+      "run",
+      "-m",
+      "pytest"
+    ],
+    [
+      "{python}",
+      "-m",
+      "coverage",
+      "report"
+    ]
+  ],
+  "check": [
+    [
+      "{python}",
+      "-m",
+      "ruff",
+      "format",
+      "--check",
+      "src",
+      "scripts",
+      "tests"
+    ],
+    [
+      "{python}",
+      "-m",
+      "ruff",
+      "check",
+      "."
+    ]
+  ],
+  "candidate": [
+    [
+      "{python}",
+      "-m",
+      "build",
+      "--sdist",
+      "--wheel",
+      "--outdir",
+      "{run}/artifacts"
+    ],
+    [
+      "{python}",
+      "scripts/package_skill.py",
+      "--out",
+      "{run}/artifacts/course-resource-download.skill"
+    ],
+    [
+      "{python}",
+      "scripts/release_check.py",
+      "{run}/artifacts"
+    ]
+  ],
+  "artifact": "*.skill",
+  "archivePrefix": "course-resource-download/",
+  "health": [
+    [
+      "{python}",
+      "-m",
+      "course_resource_download",
+      "--help"
+    ]
+  ],
+  "preserve": [
+    ".course-resource-download",
+    ".local"
+  ],
+  "format-check": [
+    [
+      "{python}",
+      "-m",
+      "ruff",
+      "format",
+      "--check",
+      "src",
+      "scripts",
+      "tests"
+    ]
+  ],
+  "format": [
+    [
+      "{python}",
+      "-m",
+      "ruff",
+      "format",
+      "src",
+      "scripts",
+      "tests"
+    ]
+  ]
+}
