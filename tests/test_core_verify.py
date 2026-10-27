@@ -178,6 +178,20 @@ class VerificationTests(unittest.TestCase):
         write_package(path, parts)
         self.assertFalse(verify.check_file(path)[0])
 
+    def test_empty_relationship_reference_is_not_dangling(self):
+        # PowerPoint emits r:id="" on navigation hyperlinks without a target;
+        # an empty reference names no resource and must not fail validation.
+        path = self.out / "actions.pptx"
+        parts = office_parts(".pptx")
+        parts["ppt/slides/slide1.xml"] = (
+            f'<p:sld xmlns:p="{verify.P_NS}" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="{verify.REL_NS}">'
+            "<p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/>"
+            '<p:sp><p:nvSpPr><p:cNvPr><a:hlinkClick r:id="" action="ppaction://first"/></p:cNvPr></p:nvSpPr></p:sp>'
+            "</p:spTree></p:cSld></p:sld>"
+        )
+        write_package(path, parts)
+        self.assertEqual(verify.check_file(path), (True, "", 1))
+
     def test_text_validates_encoding_and_login_html(self):
         path = self.out / "answer.txt"
         path.write_text("第 1 题：答案为 42。\n", encoding="utf-8-sig")
