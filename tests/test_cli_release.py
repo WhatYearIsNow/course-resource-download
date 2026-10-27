@@ -37,6 +37,7 @@ def env():
         ["login", "--help"],
         ["stuonline", "--help"],
         ["aicourse", "--help"],
+        ["chaoxing", "--help"],
         ["verify", "--help"],
     ],
 )
