@@ -217,13 +217,19 @@ def check_ooxml(path, ext):
                 raise ValueError("Package officeDocument relationship is missing or ambiguous")
             # A referenced resource must have a corresponding relationship in
             # its own part. This catches broken image/chart/slide dependencies.
+            # An empty reference value (e.g. a navigation hlinkClick with no
+            # target) names no resource and is not a dangling reference.
             for name, root in roots.items():
                 if name.endswith(".rels"):
                     continue
                 mapping = relationships.get(name, {})
                 for element in root.iter():
                     for attribute, rid in element.attrib.items():
-                        if _namespace(attribute) in {REL_NS, STRICT_REL_NS} and rid not in mapping:
+                        if (
+                            _namespace(attribute) in {REL_NS, STRICT_REL_NS}
+                            and rid
+                            and rid not in mapping
+                        ):
                             raise ValueError("XML references an absent relationship")
             root = roots[main]
             mapping = relationships.get(main, {})

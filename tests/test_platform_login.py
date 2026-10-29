@@ -207,6 +207,24 @@ class LoginContracts(unittest.TestCase):
             self.assertFalse(state.exists())
             browser.close.assert_called_once()
 
+    def test_service_kind_covers_both_platforms(self):
+        for hostname, expected in (
+            ("onlineweb.zhihuishu.com", "zhihuishu"),
+            ("zhihuishu.com", "zhihuishu"),
+            ("passport2.chaoxing.com", "chaoxing"),
+            ("chaoxing.com", "chaoxing"),
+            ("example.com", None),
+            (None, None),
+        ):
+            with self.subTest(hostname=hostname):
+                self.assertEqual(login.service_kind(hostname), expected)
+
+    def test_chaoxing_credentials_are_rejected_without_browser(self):
+        for extra in (["--phone", "x"], ["--pwd", "x"], ["--auto-captcha"]):
+            with self.subTest(extra=extra), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    login.main(["--service", "https://passport2.chaoxing.com/login", *extra])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,7 +2,7 @@
 
 枚举在线课程资料，批量下载允许保存的课件，校验文件并记录每项资源的处理结果。既可作为命令行工具使用，也可作为 Codex skill 使用。
 
-项目提供智慧树共享课与智慧课程两个实验性适配器。它们使用浏览器访问学生端页面；平台页面和接口可能变化。已在两门授权智慧课程中验证知识主题枚举，并完成 4 个真实 PPTX 的下载、校验、续跑和损坏恢复；五组跨平台 CI 全部通过。完整范围与未验证项见 [VALIDATION.md](VALIDATION.md)。
+项目提供智慧树共享课、智慧课程与学习通三个实验性适配器。它们使用浏览器访问学生端页面；平台页面和接口可能变化。已在两门授权智慧课程中验证知识主题枚举，并完成 4 个真实 PPTX 的下载、校验、续跑和损坏恢复；学习通适配器已在授权课程完成章节枚举、11 个真实 PPTX 的下载校验与续跑复用验收（2026-10-28）。五组跨平台 CI 全部通过。完整范围与未验证项见 [VALIDATION.md](VALIDATION.md)。
 
 ## 支持范围
 
@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | 智慧树共享课 `stuonline` | 递归枚举文件夹、检查下载权限、下载文档、保存清单 | 实验性适配器；离线测试 |
 | 智慧树智慧课程 `aicourse` | 遍历任务与活动或知识主题目录，收集附件和知识点资源，下载文档 | 实验性；知识主题与 PPTX 下载/恢复已实测，任务布局为离线测试 |
+| 学习通 `chaoxing` | 读取课程章节，逐知识点收集文档资源，按章节前缀筛选并下载 | 实验性；真实课程枚举、PPTX 下载与续跑已实测，见 [适配说明](references/chaoxing.md) |
 | 中国大学 MOOC / `icourse163` | 历史接口参考 | 尚未实现适配器 |
 | 高教社 `abooks` | 历史接口参考 | 尚未实现适配器 |
 
@@ -73,11 +74,17 @@ course-resource-download stuonline --url "<共享课页面 URL>" --out ./downloa
 course-resource-download aicourse --course-id COURSE_ID --class-id CLASS_ID --out ./downloads/course --list-only
 ```
 
-两套智慧树系统的标识不能互换。命令生成 `_discovery.json`，保留已有 `_manifest.json`。检查发现的资源、权限限制和遍历失败后再下载。
+学习通使用学生端课程页链接：
+
+```sh
+course-resource-download chaoxing --url "<学习通 stu 课程页 URL>" --out ./downloads/course --list-only
+```
+
+各平台标识不能互换。命令生成 `_discovery.json`，保留已有 `_manifest.json`。检查发现的资源、权限限制和遍历失败后再下载。
 
 智慧课程默认 `--layout auto`，等待任务卡后选择任务流程或知识主题流程；也可显式指定 `--layout tasks` 或 `--layout knowledge`。知识主题模式只读取目录及各知识点的资源元数据，不打开学习或播放器页面。
 
-若已在本机浏览器登录，可让智慧课程命令复用调用方已确认账号与配置的 CDP 会话：
+若已在本机浏览器登录，可让智慧课程或学习通命令复用调用方已确认账号与配置的 CDP 会话：
 
 ```sh
 course-resource-download aicourse --course-id COURSE_ID --class-id CLASS_ID --out ./downloads/course --cdp-endpoint http://127.0.0.1:9222 --list-only
@@ -85,11 +92,11 @@ course-resource-download aicourse --course-id COURSE_ID --class-id CLASS_ID --ou
 
 `--cdp-endpoint` 只接受本机回环地址，不启动或配置浏览器，也不读取 `--state`。先按所用浏览器的方式启用并授权调试连接，确认连接的是目标账号；工具会新开并关闭自己的标签页，保留浏览器和原有标签页。CDP 可访问登录会话，仅连接可信的本机端点。未使用 CDP 时仍按前面的 `login` 流程操作。
 
-共享课可追加 `--folder "第一章" --folder "第二章/课件"`，只处理所选目录及其后代；参数可重复，目录不存在时记录失败。路径相对课程资料根目录，以枚举清单的目录名为准。智慧课程当前不支持任务筛选，不应使用全课下载替代用户指定的部分任务。
+共享课可追加 `--folder "第一章" --folder "第二章/课件"`，只处理所选目录及其后代；参数可重复，目录不存在时记录失败。路径相对课程资料根目录，以枚举清单的目录名为准。学习通可用 `--chapter "2."` 按目录标签前缀限定章节，参数可重复。智慧课程当前不支持任务筛选，不应使用全课下载替代用户指定的部分任务。
 
 ### 3. 下载与校验
 
-去掉 `--list-only`，在原输出目录重跑；两套适配器用法一致：
+去掉 `--list-only`，在原输出目录重跑；各适配器用法一致：
 
 ```sh
 course-resource-download stuonline --url "<共享课页面 URL>" --out ./downloads/course
@@ -160,7 +167,7 @@ python -m build --sdist --wheel
 
 本轮验证的具体结果和未执行项见 [VALIDATION.md](VALIDATION.md)，实施范围见 [REFACTOR_PLAN.md](REFACTOR_PLAN.md)。
 
-进一步阅读：[智慧树适配说明](references/zhihuishu.md)、[清单与校验](references/manifests.md)、[故障排查](references/troubleshooting.md)、[未实现平台的历史参考](references/platform-notes.md)。
+进一步阅读：[智慧树适配说明](references/zhihuishu.md)、[学习通适配说明](references/chaoxing.md)、[清单与校验](references/manifests.md)、[故障排查](references/troubleshooting.md)、[未实现平台的历史参考](references/platform-notes.md)。
 
 ## 许可证
 

@@ -50,6 +50,16 @@ def login_error(exc, phone=None, password=None):
     return message
 
 
+def service_kind(hostname):
+    """Return 'zhihuishu', 'chaoxing', or None for a supported login service host."""
+    host = hostname or ""
+    if host == "zhihuishu.com" or host.endswith(".zhihuishu.com"):
+        return "zhihuishu"
+    if host == "chaoxing.com" or host.endswith(".chaoxing.com"):
+        return "chaoxing"
+    return None
+
+
 def is_logged_in(page, service):
     """Require a redirect to the requested service host, not an arbitrary page."""
     current = urlsplit(page.url)
@@ -242,12 +252,14 @@ def main(argv=None):
         service = urlsplit(args.service)
     except ValueError:
         parser.error("--service is not a valid URL")
-    if (
-        service.scheme != "https"
-        or not service.hostname
-        or not (service.hostname == "zhihuishu.com" or service.hostname.endswith(".zhihuishu.com"))
-    ):
-        parser.error("--service must be an HTTPS Zhihuishu URL")
+    kind = service_kind(service.hostname)
+    if service.scheme != "https" or not service.hostname or kind is None:
+        parser.error("--service must be an HTTPS Zhihuishu or Chaoxing URL")
+    if kind == "chaoxing" and (args.auto_captcha or args.phone or args.pwd or args.credentials):
+        parser.error(
+            "Credential filling and auto-captcha apply to Zhihuishu only; "
+            "complete the Chaoxing login manually"
+        )
     if os.path.exists(args.state) and not args.overwrite_state:
         print("State file already exists; select a different path or use --overwrite-state")
         return 1
@@ -287,7 +299,15 @@ def main(argv=None):
                         "Object.defineProperty(navigator,'webdriver',{get:()=>false});"
                     )
                     page = context.new_page()
-                    if args.auto_captcha:
+                    if kind == "chaoxing":
+                        # The platform redirects to its own passport and back to
+                        # the service page; the login form itself is never touched.
+                        page.goto(args.service, wait_until="domcontentloaded", timeout=60000)
+                        print(
+                            "Complete login in the browser window; the page returns to the course"
+                        )
+                        success = wait_for_login(page, args.service, args.timeout)
+                    elif args.auto_captcha:
                         capture = ChallengeCapture()
                         page.on("response", capture.on_response)
                         success = False

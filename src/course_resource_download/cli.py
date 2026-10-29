@@ -11,6 +11,7 @@ COMMANDS = {
     "login": ("platforms.login", "Create an explicit temporary login state"),
     "stuonline": ("platforms.stuonline", "Discover or download shared-course documents"),
     "aicourse": ("platforms.aicourse", "Discover or download AI-course documents"),
+    "chaoxing": ("platforms.chaoxing", "Discover or download Chaoxing (Xuexitong) documents"),
     "verify": ("verify", "Verify local downloaded files"),
 }
 
