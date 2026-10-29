@@ -181,8 +181,14 @@ class DownloadTests(unittest.TestCase):
             self.assertEqual(list(self.out.glob("*.part")), [])
 
     def test_unknown_type_is_not_published_even_if_bytes_are_valid(self):
-        path = self.out / "file.mp4"
+        path = self.out / "file.mkv"
         with self.assertRaisesRegex(ValueError, "Media validation is unsupported"):
+            download.download_atomic(self.base + "/valid.pdf", path)
+        self.assertFalse(path.exists())
+
+    def test_mp4_extension_does_not_launder_non_mp4_bytes(self):
+        path = self.out / "file.mp4"
+        with self.assertRaisesRegex(ValueError, "MP4"):
             download.download_atomic(self.base + "/valid.pdf", path)
         self.assertFalse(path.exists())
 

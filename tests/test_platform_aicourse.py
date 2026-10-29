@@ -239,9 +239,63 @@ class ActivityContracts(unittest.TestCase):
             ai.resource_entry({"url": "https://example.invalid/video.mp4"})["status"],
             "skipped_video",
         )
-        for suffix in ("mp4", "doc", "xls", "ppt"):
+        # MP4 gains a structural validator, so --include-video now downloads it.
+        for suffix in ("mp4", "m4v"):
+            entry = ai.resource_entry({"url": "https://example.invalid/file." + suffix}, True)
+            self.assertEqual(entry["status"], "discovered")
+        for suffix in ("doc", "xls", "ppt", "mkv", "avi"):
             entry = ai.resource_entry({"url": "https://example.invalid/file." + suffix}, True)
             self.assertEqual(entry["status"], "skipped_unsupported_format")
+
+    def test_video_candidates_prefer_original_then_transcode(self):
+        original = "https://example.invalid/a/b/hash.mp4"
+        self.assertEqual(
+            ai.download_candidates(original),
+            [(original, "original"), ("https://example.invalid/a/b/hash_512.mp4", "transcoded")],
+        )
+        # Non-video resources have exactly one candidate.
+        self.assertEqual(
+            ai.download_candidates("https://example.invalid/file.pdf"),
+            [("https://example.invalid/file.pdf", "original")],
+        )
+
+    def test_transcode_fallback_records_variant_and_keeps_original_identity(self):
+        with tempfile.TemporaryDirectory(dir=".") as temporary:
+            args = SimpleNamespace(out=temporary, include_video=True, list_only=False)
+            calls = []
+
+            def fake_download(url, dest, **kwargs):
+                calls.append(url)
+                if "_512" not in url:
+                    raise ValueError("HTTP 424")
+                with open(dest, "wb") as stream:
+                    stream.write(b"\x00\x00\x00\x10ftypisom" + b"\x00" * 8)
+                return 24
+
+            with (
+                patch.object(ai, "download_atomic", side_effect=fake_download),
+                patch.object(ai, "is_usable", return_value=True),
+            ):
+                entries = ai.download_resources(
+                    [{"url": "https://example.invalid/v.mp4", "name": "v.mp4"}], args, {}
+                )
+            self.assertEqual(entries[0]["status"], "ok")
+            self.assertEqual(entries[0]["variant"], "transcoded")
+            self.assertEqual(calls[0], "https://example.invalid/v.mp4")
+            self.assertEqual(calls[1], "https://example.invalid/v_512.mp4")
+            # Identity stays the original URL so a rerun recognises the file.
+            self.assertEqual(entries[0]["file"], "v.mp4")
+
+    def test_both_candidates_failing_is_reported_once(self):
+        with tempfile.TemporaryDirectory(dir=".") as temporary:
+            args = SimpleNamespace(out=temporary, include_video=True, list_only=False)
+            with patch.object(ai, "download_atomic", side_effect=ValueError("HTTP 403")):
+                entries = ai.download_resources(
+                    [{"url": "https://example.invalid/v.mp4", "name": "v.mp4"}], args, {}
+                )
+            self.assertEqual(entries[0]["status"], "failed")
+            self.assertEqual(entries[0]["error"], "HTTP 403")
+            self.assertNotIn("variant", entries[0])
 
     def test_failed_download_keeps_resource_and_redacts_error(self):
         with tempfile.TemporaryDirectory(dir=".") as temporary:

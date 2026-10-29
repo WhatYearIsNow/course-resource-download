@@ -2,7 +2,11 @@
 
 ## 未发布
 
-- 文档：补充智慧课程视频的手工下载流程（`references/zhihuishu.md`）。CLI 仍不下载视频；新增内容记录资源接口、`_512` 转码流的可用性、必需的 `Referer`、时长校验方式与自动播放副作用，供用户明确要求视频时按流程处理。
+- 新增 MP4 容器校验器：`.mp4` / `.m4v` 按 ISO base media 结构校验（`ftyp` 首箱、`moov`、`mdat`、箱链不越界），能发现截断传输和把 HTML 错误页存成 `.mp4` 的情况；不解码媒体流，也不核对时长。
+- 智慧课程 `--include-video` 现在会下载视频：`.mp4` / `.m4v` 进入下载候选，其他媒体容器仍记 `skipped_unsupported_format`。
+  - 平台原始码流经常回源失败（`424 MirrorFailed`），适配器按「原始 → `_512` 转码流」顺序尝试，命中转码流时在清单记 `variant: transcoded`。两条地址权限相同，不扩大可下载范围。
+  - 资源身份仍是原始 URL，续跑能识别已下载文件。
+- 文档：`references/zhihuishu.md` 增加「视频下载」一节，记录码流回退、`Referer` 要求、校验边界与 `_512` 的画质上限；`references/manifests.md` 补充 MP4 校验能力与 `variant` 字段。
 
 ## 0.2.0 — 2026-10-29
 
