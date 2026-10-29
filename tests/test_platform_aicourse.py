@@ -272,8 +272,9 @@ class ActivityContracts(unittest.TestCase):
                     stream.write(b"\x00\x00\x00\x10ftypisom" + b"\x00" * 8)
                 return 24
 
-            with patch.object(ai, "download_atomic", side_effect=fake_download), patch.object(
-                ai, "is_usable", return_value=True
+            with (
+                patch.object(ai, "download_atomic", side_effect=fake_download),
+                patch.object(ai, "is_usable", return_value=True),
             ):
                 entries = ai.download_resources(
                     [{"url": "https://example.invalid/v.mp4", "name": "v.mp4"}], args, {}

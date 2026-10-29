@@ -230,9 +230,7 @@ class VerificationTests(unittest.TestCase):
     def test_truncated_mp4_is_rejected(self):
         """A cut-off transfer leaves the last box claiming more bytes than exist."""
         path = self.out / "cut.mp4"
-        path.write_bytes(
-            box(b"ftyp", b"isom") + (72).to_bytes(4, "big") + b"mdat" + b"\x00" * 20
-        )
+        path.write_bytes(box(b"ftyp", b"isom") + (72).to_bytes(4, "big") + b"mdat" + b"\x00" * 20)
         ok, reason, _ = verify.check_file(path)
         self.assertFalse(ok)
         self.assertIn("truncated or malformed", reason)
@@ -269,7 +267,10 @@ class VerificationTests(unittest.TestCase):
         payload = b"\x00" * 16
         large.write_bytes(
             box(b"ftyp", b"isom")
-            + (1).to_bytes(4, "big") + b"mdat" + (32).to_bytes(8, "big") + payload
+            + (1).to_bytes(4, "big")
+            + b"mdat"
+            + (32).to_bytes(8, "big")
+            + payload
             + box(b"moov", b"\x00" * 16)
         )
         self.assertTrue(verify.check_file(large)[0])

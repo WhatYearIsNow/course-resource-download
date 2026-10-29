@@ -236,7 +236,9 @@ def resource_entry(resource, include_video=False):
         return entry
     if ext in VIDEO_EXT and not include_video:
         entry["status"] = "skipped_video"
-    elif ext in {".ppt", ".doc", ".xls"} or (ext in VIDEO_EXT and ext not in DOWNLOADABLE_VIDEO_EXT):
+    elif ext in {".ppt", ".doc", ".xls"} or (
+        ext in VIDEO_EXT and ext not in DOWNLOADABLE_VIDEO_EXT
+    ):
         entry.update(
             status="skipped_unsupported_format",
             error="Structural validation for this format is not supported",
@@ -295,9 +297,7 @@ def download_resources(resources, args, index, entries=None, checkpoint=None):
                 last_error = None
                 for candidate, variant in download_candidates(url):
                     try:
-                        entry["size"] = download_atomic(
-                            candidate, destination, referer=BASE + "/"
-                        )
+                        entry["size"] = download_atomic(candidate, destination, referer=BASE + "/")
                     except Exception as exc:  # noqa: BLE001 - reported below
                         last_error = exc
                         continue
@@ -305,8 +305,10 @@ def download_resources(resources, args, index, entries=None, checkpoint=None):
                         entry["variant"] = variant
                     break
                 else:
-                    raise last_error if last_error is not None else ValueError(
-                        "No download candidate"
+                    raise (
+                        last_error
+                        if last_error is not None
+                        else ValueError("No download candidate")
                     )
                 if not is_usable(destination):
                     raise ValueError("Downloaded file failed validation")
