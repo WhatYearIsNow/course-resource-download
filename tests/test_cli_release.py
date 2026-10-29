@@ -147,6 +147,18 @@ def test_skill_metadata_references_and_license():
     assert (ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
 
 
+def test_video_procedure_is_documented_and_scope_stays_explicit():
+    """The manual video flow must stay documented next to its CLI boundary."""
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    reference = (ROOT / "references" / "zhihuishu.md").read_text(encoding="utf-8")
+    assert "references/zhihuishu.md" in skill
+    assert "视频下载（手工流程" in reference
+    # 文档必须继续声明 CLI 不下载视频，避免被读成已支持
+    assert "skipped_unsupported_format" in reference
+    assert "_512" in reference
+    assert "Referer" in reference
+
+
 def test_dispatch_forwards_options_and_returns_status(monkeypatch):
     class Module:
         @staticmethod
