@@ -6,4 +6,4 @@ recursive-include scripts *.py
 recursive-include tests *.py
 recursive-include .github *.yml
 global-exclude __pycache__ *.py[cod] *.part
-
+include MAINTENANCE.md maintenance.json requirements-dev.txt .editorconfig

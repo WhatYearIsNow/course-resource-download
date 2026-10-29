@@ -1,0 +1,8 @@
+# Reviewed development/test versions; not runtime dependencies.
+ruff==0.14.1
+pytest==9.0.2
+coverage==7.10.7
+build==1.6.1
+wheel==0.45.1
+setuptools==80.9.0
+pypdf==6.10.2
