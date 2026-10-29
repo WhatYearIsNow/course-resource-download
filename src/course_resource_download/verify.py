@@ -1,8 +1,10 @@
 """Offline structural validation; unsupported formats are explicit failures.
 
-Supported: PDF (pypdf), OOXML .pptx/.docx/.xlsx, and UTF-8 .txt.
-Legacy binary Office and video need dedicated validators and are not claimed as
-verified merely because a signature or file extension resembles those formats.
+Supported: PDF (pypdf), OOXML .pptx/.docx/.xlsx, UTF-8 .txt, and the ISO base
+media container behind .mp4/.m4v.
+Legacy binary Office and the remaining media containers need dedicated
+validators and are not claimed as verified merely because a signature or file
+extension resembles those formats.
 """
 
 from __future__ import annotations
@@ -17,9 +19,11 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-SUPPORTED_EXTENSIONS = frozenset({".pdf", ".pptx", ".docx", ".xlsx", ".txt"})
+SUPPORTED_EXTENSIONS = frozenset({".pdf", ".pptx", ".docx", ".xlsx", ".txt", ".mp4", ".m4v"})
 MAX_XML_BYTES = 16 * 1024 * 1024
 MAX_PACKAGE_BYTES = 256 * 1024 * 1024
+MAX_MP4_BOXES = 20000
+MP4_EXTENSIONS = frozenset({".mp4", ".m4v"})
 CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
 PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -320,6 +324,63 @@ def check_ole(path):
     )
 
 
+def _top_level_boxes(stream, size):
+    """Yield top-level ISO base media box types, rejecting a broken box chain.
+
+    A truncated transfer almost always leaves the last box claiming more bytes
+    than the file holds, so walking the chain is what makes this a structural
+    check rather than a signature sniff.
+    """
+    offset = 0
+    seen = 0
+    while offset < size:
+        seen += 1
+        if seen > MAX_MP4_BOXES:
+            raise ValueError("Too many top-level boxes")
+        stream.seek(offset)
+        header = stream.read(8)
+        if len(header) < 8:
+            raise ValueError("Truncated box header")
+        box_size = int.from_bytes(header[:4], "big")
+        box_type = header[4:8]
+        if box_size == 1:
+            extended = stream.read(8)
+            if len(extended) < 8:
+                raise ValueError("Truncated extended box header")
+            box_size = int.from_bytes(extended, "big")
+            if box_size < 16:
+                raise ValueError("Invalid extended box size")
+        elif box_size == 0:
+            # Only legal for the final box: it then runs to end of file.
+            box_size = size - offset
+        elif box_size < 8:
+            raise ValueError("Invalid box size")
+        if offset + box_size > size:
+            raise ValueError("Box exceeds file bounds")
+        yield box_type
+        offset += box_size
+
+
+def check_mp4(path):
+    """Validate the ISO base media container; media streams are not decoded."""
+    try:
+        size = os.path.getsize(path)
+        if size < 16:
+            return False, "File is too small to be an MP4 container", None
+        with open(path, "rb") as stream:
+            boxes = list(_top_level_boxes(stream, size))
+    except (OSError, ValueError):
+        return False, "MP4 box structure is truncated or malformed", None
+    if not boxes or boxes[0] != b"ftyp":
+        return False, "Missing MP4 ftyp box", None
+    present = set(boxes)
+    if b"moov" not in present:
+        return False, "Missing MP4 moov box", None
+    if b"mdat" not in present:
+        return False, "Missing MP4 mdat box", None
+    return True, "", None
+
+
 def check_text(path):
     try:
         size = os.path.getsize(path)
@@ -354,10 +415,12 @@ def check_file(path, *, extension=None):
             return check_ole(path)
         if ext == ".txt":
             return check_text(path)
-        if ext in {".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v", ".mp3", ".m4a"}:
+        if ext in MP4_EXTENSIONS:
+            return check_mp4(path)
+        if ext in {".webm", ".mkv", ".mov", ".avi", ".mp3", ".m4a"}:
             return (
                 False,
-                "Media validation is unsupported; video/audio downloads cannot be marked verified",
+                "Media validation is unsupported for this container; the download cannot be marked verified",
                 None,
             )
         return False, "Unsupported file format: " + (ext or "no extension"), None

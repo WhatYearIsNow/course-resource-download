@@ -23,6 +23,15 @@ def pdf_bytes():
     return output.getvalue()
 
 
+def box(box_type, payload):
+    return (len(payload) + 8).to_bytes(4, "big") + box_type + payload
+
+
+def mp4_bytes():
+    """Smallest well-formed ISO base media file: ftyp + mdat + moov."""
+    return box(b"ftyp", b"isom") + box(b"mdat", b"\x00" * 64) + box(b"moov", b"\x00" * 32)
+
+
 def office_parts(ext):
     main, content_type = verify.OOXML_REQUIRED[ext]
     types = f'<Types xmlns="{verify.CT_NS}"><Override PartName="/{main}" ContentType="{content_type}"/></Types>'
@@ -207,11 +216,63 @@ class VerificationTests(unittest.TestCase):
             self.assertFalse(verify.check_file(path)[0])
 
     def test_legacy_office_and_media_are_honestly_unsupported(self):
-        for ext in (".mp4", ".m4a", ".ppt", ".doc", ".xls", ".unknown"):
+        for ext in (".m4a", ".mkv", ".mov", ".ppt", ".doc", ".xls", ".unknown"):
             path = self.out / ("file" + ext)
             path.write_bytes(b"signature is not a structural document" * 100)
             self.assertFalse(verify.check_file(path)[0])
         self.assertFalse(verify.check_file(self.out / "missing.pdf")[0])
+
+    def test_mp4_container_is_validated_structurally(self):
+        path = self.out / "movie.mp4"
+        path.write_bytes(mp4_bytes())
+        self.assertEqual(verify.check_file(path), (True, "", None))
+
+    def test_truncated_mp4_is_rejected(self):
+        """A cut-off transfer leaves the last box claiming more bytes than exist."""
+        path = self.out / "cut.mp4"
+        path.write_bytes(
+            box(b"ftyp", b"isom") + (72).to_bytes(4, "big") + b"mdat" + b"\x00" * 20
+        )
+        ok, reason, _ = verify.check_file(path)
+        self.assertFalse(ok)
+        self.assertIn("truncated or malformed", reason)
+
+    def test_mp4_without_movie_header_is_rejected(self):
+        path = self.out / "noheader.mp4"
+        path.write_bytes(box(b"ftyp", b"isom") + box(b"mdat", b"\x00" * 64))
+        ok, reason, _ = verify.check_file(path)
+        self.assertFalse(ok)
+        self.assertIn("moov", reason)
+
+    def test_mp4_without_media_data_is_rejected(self):
+        path = self.out / "nodata.mp4"
+        path.write_bytes(box(b"ftyp", b"isom") + box(b"moov", b"\x00" * 64))
+        ok, reason, _ = verify.check_file(path)
+        self.assertFalse(ok)
+        self.assertIn("mdat", reason)
+
+    def test_html_error_page_named_mp4_is_rejected(self):
+        path = self.out / "error.mp4"
+        path.write_bytes(b"<html><body>403 Forbidden</body></html>" * 10)
+        ok, reason, _ = verify.check_file(path)
+        self.assertFalse(ok)
+        self.assertIn("MP4", reason)
+
+    def test_mp4_accepts_moov_after_mdat_and_extended_sizes(self):
+        """Non-faststart files and 64-bit box sizes are both legal."""
+        path = self.out / "late.mp4"
+        path.write_bytes(
+            box(b"ftyp", b"isom") + box(b"mdat", b"\x00" * 32) + box(b"moov", b"\x00" * 16)
+        )
+        self.assertTrue(verify.check_file(path)[0])
+        large = self.out / "large.mp4"
+        payload = b"\x00" * 16
+        large.write_bytes(
+            box(b"ftyp", b"isom")
+            + (1).to_bytes(4, "big") + b"mdat" + (32).to_bytes(8, "big") + payload
+            + box(b"moov", b"\x00" * 16)
+        )
+        self.assertTrue(verify.check_file(large)[0])
 
     def test_directory_verification_excludes_internal_reports_and_lock(self):
         (self.out / "notes.pdf").write_bytes(pdf_bytes())

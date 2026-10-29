@@ -8,7 +8,7 @@ Those field semantics are observed behavior, not a documented platform API.
 import argparse
 import json
 import os
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from ..common import (
     acquire_lock,
@@ -29,6 +29,8 @@ BASE = "https://ai-smart-course-student-pro.zhihuishu.com"
 DEFAULT_STATE = os.path.join(".course-resource-download", "state.json")
 VIDEO_EXT = {".mp4", ".avi", ".mov", ".wmv", ".flv", ".m4v", ".mpeg", ".mpg", ".mkv"}
 DOC_EXT = {".pdf", ".ppt", ".pptx", ".doc", ".docx", ".xls", ".xlsx", ".txt"}
+# Only containers with a structural validator may be downloaded as video.
+DOWNLOADABLE_VIDEO_EXT = {".mp4", ".m4v"}
 
 
 def sync_playwright():
@@ -234,12 +236,12 @@ def resource_entry(resource, include_video=False):
         return entry
     if ext in VIDEO_EXT and not include_video:
         entry["status"] = "skipped_video"
-    elif ext in {".ppt", ".doc", ".xls"} or (include_video and ext in VIDEO_EXT):
+    elif ext in {".ppt", ".doc", ".xls"} or (ext in VIDEO_EXT and ext not in DOWNLOADABLE_VIDEO_EXT):
         entry.update(
             status="skipped_unsupported_format",
             error="Structural validation for this format is not supported",
         )
-    elif ext not in DOC_EXT and not (include_video and ext in VIDEO_EXT):
+    elif ext not in DOC_EXT and ext not in VIDEO_EXT:
         entry.update(status="skipped_non_document", error="URL extension is not allowed")
     else:
         name = resource.get("name")
@@ -250,6 +252,24 @@ def resource_entry(resource, include_video=False):
             filename = os.path.splitext(filename)[0] + ext
         entry.update(status="discovered", file=filename)
     return entry
+
+
+def download_candidates(url):
+    """Return (url, variant) pairs to try, in order, for one resource.
+
+    Video rows point at the original upload, which the CDN frequently cannot
+    serve back (403 at origin, surfaced as 424). The platform's own player
+    requests the ``_512`` transcode instead, so that is the same resource at a
+    lower bitrate rather than a different interface. Permission failures apply
+    to both, so this never widens what the account may fetch.
+    """
+    parsed = urlsplit(url)
+    stem, ext = os.path.splitext(parsed.path)
+    candidates = [(url, "original")]
+    if ext.lower() in DOWNLOADABLE_VIDEO_EXT:
+        transcoded = urlunsplit(parsed._replace(path=stem + "_512" + ext))
+        candidates.append((transcoded, "transcoded"))
+    return candidates
 
 
 def download_resources(resources, args, index, entries=None, checkpoint=None):
@@ -272,7 +292,22 @@ def download_resources(resources, args, index, entries=None, checkpoint=None):
             if reused and is_usable(destination):
                 entry["status"] = "exists"
             else:
-                entry["size"] = download_atomic(url, destination, referer=BASE + "/")
+                last_error = None
+                for candidate, variant in download_candidates(url):
+                    try:
+                        entry["size"] = download_atomic(
+                            candidate, destination, referer=BASE + "/"
+                        )
+                    except Exception as exc:  # noqa: BLE001 - reported below
+                        last_error = exc
+                        continue
+                    if variant != "original":
+                        entry["variant"] = variant
+                    break
+                else:
+                    raise last_error if last_error is not None else ValueError(
+                        "No download candidate"
+                    )
                 if not is_usable(destination):
                     raise ValueError("Downloaded file failed validation")
                 entry["status"] = "ok"
@@ -394,7 +429,11 @@ def build_parser():
     parser.add_argument("--out", required=True)
     parser.add_argument("--state", default=DEFAULT_STATE)
     parser.add_argument("--list-only", action="store_true")
-    parser.add_argument("--include-video", action="store_true")
+    parser.add_argument(
+        "--include-video",
+        action="store_true",
+        help="Also download .mp4/.m4v resources; other media containers stay skipped",
+    )
     parser.add_argument("--max-activities", type=int, default=50)
     parser.add_argument("--layout", choices=["auto", "tasks", "knowledge"], default="auto")
     parser.add_argument(

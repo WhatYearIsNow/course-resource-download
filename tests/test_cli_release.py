@@ -147,16 +147,19 @@ def test_skill_metadata_references_and_license():
     assert (ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
 
 
-def test_video_procedure_is_documented_and_scope_stays_explicit():
-    """The manual video flow must stay documented next to its CLI boundary."""
+def test_video_support_is_documented_with_its_limits():
+    """Video download is supported now; the documented limits must stay visible."""
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     reference = (ROOT / "references" / "zhihuishu.md").read_text(encoding="utf-8")
+    manifests = (ROOT / "references" / "manifests.md").read_text(encoding="utf-8")
     assert "references/zhihuishu.md" in skill
-    assert "视频下载（手工流程" in reference
-    # 文档必须继续声明 CLI 不下载视频，避免被读成已支持
+    assert "## 视频下载" in reference
+    # 只承诺有校验器的容器，其余仍要写明跳过
     assert "skipped_unsupported_format" in reference
     assert "_512" in reference
     assert "Referer" in reference
+    assert "variant" in manifests
+    assert "MP4" in manifests
 
 
 def test_dispatch_forwards_options_and_returns_status(monkeypatch):

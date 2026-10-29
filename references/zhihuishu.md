@@ -94,17 +94,16 @@ course-resource-download aicourse --course-id COURSE_ID --class-id CLASS_ID --ou
 
 以上字段仅作为适配器维护线索。不要通过构造未授权请求、解锁任务或改写平台权限扩大用户原有访问范围。
 
-## 视频下载（手工流程，CLI 不覆盖）
+## 视频下载
 
-当前 CLI 不下载视频：`--include-video` 只改变候选筛选，视频仍记为 `skipped_unsupported_format`。用户明确要求视频时，按下面的流程在已登录浏览器里读取平台自身的资源接口，再在浏览器外下载。本节是 2026-10-29 在智慧课程学习页（`/learnPage/{courseId}/{classId}/{nodeUid}?mapUid=...`）实测的观察结果，平台改版需重新确认。
+`--include-video` 会下载 `.mp4` / `.m4v` 视频。其他容器（`.mkv`、`.avi`、`.mov`、`.wmv` 等）仍记 `skipped_unsupported_format`，因为没有对应校验器，不能算作已验证。以下为 2026-10-29 在智慧课程学习页（`/learnPage/{courseId}/{classId}/{nodeUid}?mapUid=...`）实测的观察，平台改版需重新确认。
 
-1. **定位知识点。** 学习页左栏是 知识模块 → 章节（`.el-collapse-item__header`）→ 知识点（`.section-item-collapse-title .title-text`）。用户按知识点分组要视频时，先确认目标在知识点层，不要与同名章节混淆。
-2. **取资源清单。** 资源接口是 `POST https://kg-ai-run.zhihuishu.com/run/gateway/t/stu/resources/list-knowledge-resource`，请求体为加密的 `{secretStr, date}`，**不能离线重放**。可靠做法是逐个点击知识点，用 CDP `Network.getResponseBody` 抓该请求的响应。
-3. **读字段。** `data.resourceList[].resourcesDetail` 给出 `resourcesName`、`resourcesUrl`、`resourcesSize`、`resourcesTime`（秒）、`resourcesSuffix`、`resourcesFileId`。`resourcesTime` 是后续校验时长的依据。
-4. **换可下载的码流。** `resourcesUrl` 指向的原始 mp4 取不到：CDN 回源 403，对外表现为 `424 MirrorFailed`。只有把文件名改成 `<hash>_512.mp4` 才返回 `206`；`_1024/_2048/_1080/_720/_480/_256/_128` 均为 `404`。`https://newbase.zhihuishu.com/video/initVideoNew?videoID=<resourcesFileId>` 也只返回「校内」一条线，与 `_512` 一致。这是平台播放器自己请求的转码流，不是绕过权限；若 `_512` 也失败，按失败记录，不要另找接口。
-5. **下载请求头。** 必须带 `Referer: https://ai-smart-course-student-pro.zhihuishu.com/` 和桌面 UA；缺 Referer 直接 `403`。不需要 Cookie。
-6. **校验。** 视频没有受支持的完整性校验器，不能算作 `ok`。交付前用 `ffprobe` 比对时长与 `resourcesTime`（容差约 2 秒），并记录分辨率；实测 `_512` 为 1200x720 或 1152x720、约 280 kbps，画质低于原始码流，需向用户说明。
-7. **副作用。** 点击知识点会自动播放并可能写入学习进度，抓完立即 `document.querySelector('video').pause()`。
+1. **资源清单**来自 `POST https://kg-ai-run.zhihuishu.com/run/gateway/t/stu/resources/list-knowledge-resource`。请求体是加密的 `{secretStr, date}`，不能离线重放；适配器在已登录页面内调用。`data.resourceList[].resourcesDetail` 给出 `resourcesName`、`resourcesUrl`、`resourcesSize`、`resourcesTime`（秒）、`resourcesSuffix`、`resourcesFileId`。
+2. **码流回退。** `resourcesUrl` 指向原始上传，CDN 经常回源失败（源站 403，对外表现为 `424 MirrorFailed`）。平台播放器自己请求的是 `<hash>_512.mp4` 转码流，所以适配器按「原始 → `_512`」顺序尝试，命中转码流时在清单里记 `variant: transcoded`。两条地址权限相同，原始被拒时转码流同样被拒，因此这不是绕过权限；`_512` 也失败时按失败记录，不要另找接口。`_1024/_2048/_1080/_720/_480` 等后缀均为 `404`，`newbase.zhihuishu.com/video/initVideoNew?videoID=<resourcesFileId>` 也只返回「校内」一条线，与 `_512` 一致。
+3. **请求头。** 下载必须带 `Referer: https://ai-smart-course-student-pro.zhihuishu.com/`（适配器已带）和桌面 UA；缺 Referer 直接 `403`。不需要 Cookie。
+4. **校验。** MP4 走 ISO base media 容器校验：首个箱必须是 `ftyp`，且存在 `moov` 与 `mdat`，箱链不得越界。这能发现截断传输和把 HTML 错误页存成 `.mp4` 的情况，但**不解码媒体流、不核对时长**。需要时长证据时用 `ffprobe` 比对 `resourcesTime`（容差约 2 秒）。
+5. **画质。** `_512` 是 1200x720 或 1152x720、约 280 kbps，明显低于原始码流；交付时要说明这一上限。
+6. **副作用。** 适配器不进入播放器路由。人工在页面点击知识点会自动播放并可能写入学习进度，抓完立即 `document.querySelector('video').pause()`。
 
 不要把 `resourcesUrl` 当作视频的唯一身份：同一行有 `resourcesVideoDetail` 时它可能只是多个视频共用的 JPG 封面。
 
