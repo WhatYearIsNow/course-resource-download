@@ -2,7 +2,7 @@
 
 枚举在线课程资料，批量下载允许保存的课件，校验文件并记录每项资源的处理结果。既可作为命令行工具使用，也可作为 Codex skill 使用。
 
-项目提供智慧树共享课、智慧课程与学习通三个实验性适配器。它们使用浏览器访问学生端页面；平台页面和接口可能变化。已在两门授权智慧课程中验证知识主题枚举，并完成 4 个真实 PPTX 的下载、校验、续跑和损坏恢复；学习通适配器已在授权课程完成章节枚举、11 个真实 PPTX 的下载校验与续跑复用验收（2026-10-28）。五组跨平台 CI 全部通过。完整范围与未验证项见 [VALIDATION.md](VALIDATION.md)。
+项目提供智慧树共享课、智慧课程、学习通与中国大学 MOOC 四个实验性适配器。它们使用浏览器访问学生端页面；平台页面和接口可能变化。已在两门授权智慧课程中验证知识主题枚举，并完成 4 个真实 PPTX 的下载、校验、续跑和损坏恢复；学习通适配器已在授权课程完成章节枚举、11 个真实 PPTX 的下载校验与续跑复用验收（2026-10-28）。五组跨平台 CI 全部通过。完整范围与未验证项见 [VALIDATION.md](VALIDATION.md)。
 
 ## 支持范围
 
@@ -11,10 +11,10 @@
 | 智慧树共享课 `stuonline` | 递归枚举文件夹、检查下载权限、下载文档、保存清单 | 实验性适配器；离线测试 |
 | 智慧树智慧课程 `aicourse` | 遍历任务与活动或知识主题目录，收集附件和知识点资源，下载文档 | 实验性；知识主题与 PPTX 下载/恢复已实测，任务布局为离线测试 |
 | 学习通 `chaoxing` | 读取课程章节，逐知识点收集文档资源，按章节前缀筛选并下载 | 实验性；真实课程枚举、PPTX 下载与续跑已实测，见 [适配说明](references/chaoxing.md) |
-| 中国大学 MOOC / `icourse163` | 历史接口参考 | 尚未实现适配器 |
+| 中国大学 MOOC / `icourse163` | 读取课程树，下载文档与视频（HLS 转 MP4），按章节前缀筛选 | 实验性；真实课程枚举、文档与视频下载已实测，见 [适配说明](references/icourse163.md) |
 | 高教社 `abooks` | 历史接口参考 | 尚未实现适配器 |
 
-默认跳过视频。`--include-video` 保留为兼容选项，只改变候选筛选；当前视频和旧版 Office 没有受支持的完整性校验，仍记录为 `skipped_unsupported_format`。不提供 HLS 分片合并。下载类型和校验边界见 [清单与校验约定](references/manifests.md)。
+默认跳过视频，需要时加 `--include-video`。可下载的视频容器只有 `.mp4`/`.m4v`，以及 icourse163 的 HLS 流（拼接后由 ffmpeg 无损转封装成 MP4，需要本机有 ffmpeg）。其他媒体容器与旧版 Office 仍记录为 `skipped_unsupported_format`，因为它们没有受支持的完整性校验。下载类型和校验边界见 [清单与校验约定](references/manifests.md)。
 
 ## 安装
 
@@ -78,6 +78,7 @@ course-resource-download aicourse --course-id COURSE_ID --class-id CLASS_ID --ou
 
 ```sh
 course-resource-download chaoxing --url "<学习通 stu 课程页 URL>" --out ./downloads/course --list-only
+course-resource-download icourse163 --url "<课程学习页 URL>" --out ./downloads/course --list-only
 ```
 
 各平台标识不能互换。命令生成 `_discovery.json`，保留已有 `_manifest.json`。检查发现的资源、权限限制和遍历失败后再下载。
@@ -92,7 +93,7 @@ course-resource-download aicourse --course-id COURSE_ID --class-id CLASS_ID --ou
 
 `--cdp-endpoint` 只接受本机回环地址，不启动或配置浏览器，也不读取 `--state`。先按所用浏览器的方式启用并授权调试连接，确认连接的是目标账号；工具会新开并关闭自己的标签页，保留浏览器和原有标签页。CDP 可访问登录会话，仅连接可信的本机端点。未使用 CDP 时仍按前面的 `login` 流程操作。
 
-共享课可追加 `--folder "第一章" --folder "第二章/课件"`，只处理所选目录及其后代；参数可重复，目录不存在时记录失败。路径相对课程资料根目录，以枚举清单的目录名为准。学习通可用 `--chapter "2."` 按目录标签前缀限定章节，参数可重复。智慧课程当前不支持任务筛选，不应使用全课下载替代用户指定的部分任务。
+共享课可追加 `--folder "第一章" --folder "第二章/课件"`，只处理所选目录及其后代；参数可重复，目录不存在时记录失败。路径相对课程资料根目录，以枚举清单的目录名为准。学习通与中国大学 MOOC 可用 `--chapter "2."` 按章节标签前缀限定章节，参数可重复。智慧课程当前不支持任务筛选，不应使用全课下载替代用户指定的部分任务。
 
 ### 3. 下载与校验
 
@@ -100,8 +101,11 @@ course-resource-download aicourse --course-id COURSE_ID --class-id CLASS_ID --ou
 
 ```sh
 course-resource-download stuonline --url "<共享课页面 URL>" --out ./downloads/course
+course-resource-download icourse163 --url "<课程学习页 URL>" --out ./downloads/course --include-video
 course-resource-download verify ./downloads/course --recursive
 ```
+
+中国大学 MOOC 的视频只有 HLS，适配器会下载分片、拼接成 MPEG-TS，再用 ffmpeg `-c copy` 无损转封装成 MP4；因此**下载视频需要本机有 ffmpeg**（`CRD_FFMPEG` 或 `PATH`）。缺少 ffmpeg 时视频行记 `failed`，文档下载不受影响。`--max-video-mb` 限制单个视频拼接后的总字节数。
 
 下载清单 `_manifest.json` 用于记录状态和续跑。文件先写入临时文件，通过校验后再替换目标。清单也采用临时文件加原子替换。保留原清单有助于识别上次已下载的文件，避免同名资源被反复另存。
 
