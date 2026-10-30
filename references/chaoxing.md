@@ -32,8 +32,17 @@ course-resource-download chaoxing --url "..." --out ./downloads/course --chapter
 - 资源身份是平台文档对象的 `objectid`；同一文档出现在多个章节时只处理一次，`chapters` 字段列出全部出现位置。
 - 清单中的 `url` 字段记录 `objectid:<hex>` 稳定标识，**不写入签名下载直链**；签名链接每次读取都会变化，只在本次运行内存中短暂存在。
 - 对象状态无下载直链时记录为 `permission_denied`（平台未暴露下载），整轮非零退出。
-- 文档类型按平台文件名扩展名判定；视频默认 `skipped_video`，`--include-video` 与旧版 Office 一样记录为 `skipped_unsupported_format`（无受支持校验）。
+- 类型按平台文件名扩展名判定。视频默认 `skipped_video`；加 `--include-video` 后 `.mp4`/`.m4v` 正常下载并走 ISO base media 容器校验，其他媒体容器仍记 `skipped_unsupported_format`。
 - 签名直链要求 `Referer: https://mooc1.chaoxing.com/`，缺失会得到 403 页面；公共下载逻辑已按此携带。
+
+## 视频
+
+学习通的视频**就是普通 MP4**，和文档走同一条链路，不需要 HLS 或 ffmpeg：
+
+- 同一个 `ananas/status/<objectid>` 响应里，`filename` 以 `.mp4` 结尾、并带 `duration` / `dtoken` 字段的就是视频；`download` 字段给出签名直链。
+- 加 `--include-video` 后按 `.mp4`/`.m4v` 下载，校验走 MP4 容器检查（`ftyp` 首箱、存在 `moov` 与 `mdat`、箱链不越界），不解码媒体流也不核对时长。
+- 签名直链同样要求 `Referer: https://mooc1.chaoxing.com/`，缺失会拿到 403 页面；适配器已携带。
+- 2026-10-27 首次遇到真实视频（`How to Write a Killer resume.mp4`，19.8 MB），当时按默认跳过；2026-10-30 起 `--include-video` 可下载。
 
 ## 维护时留意
 

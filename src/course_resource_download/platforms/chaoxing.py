@@ -29,7 +29,13 @@ from ..common import (
     summarize,
     write_manifest,
 )
-from .aicourse import DEFAULT_STATE, DOC_EXT, VIDEO_EXT, sync_playwright
+from .aicourse import (
+    DEFAULT_STATE,
+    DOC_EXT,
+    DOWNLOADABLE_VIDEO_EXT,
+    VIDEO_EXT,
+    sync_playwright,
+)
 from .knowledge import validate_cdp_endpoint
 
 BASE_MOOC1 = "https://mooc1.chaoxing.com"
@@ -152,11 +158,14 @@ def classify_status(body, include_video=False):
     if ext in VIDEO_EXT:
         if not include_video:
             entry["status"] = "skipped_video"
-        else:
+            return entry
+        if ext not in DOWNLOADABLE_VIDEO_EXT:
             entry.update(
                 status="skipped_unsupported_format",
-                error="Media validation is unsupported",
+                error="Structural validation for this format is not supported",
             )
+            return entry
+        entry.update(status="discovered", file=safe_name(filename))
         return entry
     if ext in LEGACY_OFFICE_EXT:
         entry.update(
@@ -262,7 +271,7 @@ def visit_chapters(page, plan, base, args, entries, store, signed, records, chec
                 try:
                     raw = page.evaluate(JS_FETCH, status_url(base, objectid))
                     body = json.loads(raw) if isinstance(raw, str) and raw else None
-                    entry = classify_status(body)
+                    entry = classify_status(body, args.include_video)
                     if entry["status"] == "discovered":
                         signed[entry["url"]] = body.get("download")
                 except Exception as exc:
@@ -409,15 +418,19 @@ def main(argv=None):
                 page.goto(args.url, wait_until="load", timeout=90000)
                 if "passport2.chaoxing.com" in page.url:
                     raise RuntimeError("Login state expired")
-                page.wait_for_selector(
-                    'iframe[name="frame_content-zj"]', state="attached", timeout=30000
-                )
-                course_url = page.evaluate(JS_FRAME_SRC)
-                if not isinstance(course_url, str) or not course_url:
-                    raise RuntimeError("Course content frame not found on the course page")
-                page.goto(course_url, wait_until="load", timeout=90000)
-                if "passport2.chaoxing.com" in page.url:
-                    raise RuntimeError("Login state expired")
+                # Two layouts serve the same catalog: the older one embeds it in
+                # ``frame_content-zj``, the newer one renders it on the page
+                # itself. Prefer whichever is actually present.
+                if page.query_selector(".chapter_item") is None:
+                    page.wait_for_selector(
+                        'iframe[name="frame_content-zj"]', state="attached", timeout=30000
+                    )
+                    course_url = page.evaluate(JS_FRAME_SRC)
+                    if not isinstance(course_url, str) or not course_url:
+                        raise RuntimeError("Course content frame not found on the course page")
+                    page.goto(course_url, wait_until="load", timeout=90000)
+                    if "passport2.chaoxing.com" in page.url:
+                        raise RuntimeError("Login state expired")
                 page.wait_for_selector(".chapter_item", state="attached", timeout=30000)
                 raw = json.loads(page.evaluate(JS_CHAPTERS))
                 enc, cpi = parse_toold_source(raw.get("source"))
