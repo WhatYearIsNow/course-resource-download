@@ -33,6 +33,11 @@ JS_ROWS = """() => [...document.querySelectorAll('tr')].map(r => {
             onclick: a ? a.getAttribute('onclick') : null};
 }).filter(x => x.name || x.fid || x.isFile)"""
 
+JS_VIDEO = re.compile(
+    r"tm_data_show_proxy\(\s*this\s*,\s*[^,]*,\s*(['\"])[^'\"]*\1\s*,\s*"
+    r"(['\"])[^'\"]*\2\s*,\s*(['\"])(.*?)\3"
+)
+
 JS_DOWNLOAD = """async (args) => {
     const [id, ts] = args;
     const body = new URLSearchParams();
@@ -47,12 +52,36 @@ JS_DOWNLOAD = """async (args) => {
 }"""
 
 
+def wait_for_table(page, timeout_ms=15000):
+    """Wait until the AJAX-filled material table settles.
+
+    The page renders its header row at DOMContentLoaded and fills the body
+    afterwards, so waiting for any `tr` reads an empty table. Poll the data rows
+    until the count stops changing; an empty folder settles at zero.
+    """
+    page.wait_for_selector("tr", state="attached", timeout=timeout_ms)
+    deadline = time.monotonic() + timeout_ms / 1000
+    previous = None
+    stable = 0
+    while time.monotonic() < deadline:
+        count = page.evaluate("() => document.querySelectorAll('tr[fid], tr.tm-file').length")
+        if count == previous:
+            stable += 1
+            if stable >= 2:
+                return count
+        else:
+            previous = count
+            stable = 0
+        page.wait_for_timeout(250)
+    return previous or 0
+
+
 def open_folder(page, url, fid_path):
     """Replay the folder path from the root; validate navigation at every step."""
     page.goto(url, wait_until="domcontentloaded", timeout=90000)
-    page.wait_for_selector("tr", state="attached", timeout=15000)
     if "login.zhihuishu.com" in page.url:
         raise RuntimeError("Login state expired")
+    wait_for_table(page)
     if not page.query_selector("tr"):
         raise RuntimeError("Course material table not found")
     for fid in fid_path:
@@ -70,6 +99,8 @@ def open_folder(page, url, fid_path):
         )
         if not opened:
             return False
+        # The new listing fills asynchronously; settle it before comparing.
+        wait_for_table(page)
         # Keeping the old table visible does not prove navigation succeeded.
         # Identical parent/child listings conservatively fail this confirmation.
         page.wait_for_function(
@@ -85,8 +116,9 @@ def open_folder(page, url, fid_path):
 def process_file(page, row, label, out, args, index, entry):
     """Resolve one resource; denied resources never reach the download API."""
     filetype = str(row.get("ftype") or "").lower().lstrip(".")
+    is_video = ("." + filetype) in VIDEO_EXT
     if filetype not in DOC_TYPES:
-        if ("." + filetype) in VIDEO_EXT:
+        if is_video:
             if not args.include_video:
                 entry["status"] = "skipped_video"
                 return
@@ -100,23 +132,34 @@ def process_file(page, row, label, out, args, index, entry):
     if str(row.get("candownload")) != "0":
         entry.update(status="failed", error="Unknown download permission flag")
         return
-    match = re.search(
-        r"filePreviewIframe1\(\s*(['\"]).*?\1\s*,\s*(['\"]).*?\2\s*,\s*(['\"])(.*?)\3",
-        row.get("onclick") or "",
-    )
-    if not match or not match.group(4):
-        entry.update(status="failed", error="Cannot parse resource download id")
-        return
-    entry["dataId"] = match.group(4)
-    if args.list_only:
-        entry["status"] = "discovered"
-        return
-    raw = page.evaluate(JS_DOWNLOAD, [entry["dataId"], str(int(time.time() * 1000))])
-    payload = json.loads(raw)
-    url = payload.get("dataUrl") if isinstance(payload, dict) else None
+    onclick = row.get("onclick") or ""
+    if is_video:
+        # Video rows carry the media URL itself; there is no download id.
+        match = JS_VIDEO.search(onclick)
+        if not match or not match.group(4):
+            entry.update(status="failed", error="Cannot parse video URL")
+            return
+        url = match.group(4)
+    else:
+        match = re.search(
+            r"filePreviewIframe1\(\s*(['\"]).*?\1\s*,\s*(['\"]).*?\2\s*,\s*(['\"])(.*?)\3",
+            onclick,
+        )
+        if not match or not match.group(4):
+            entry.update(status="failed", error="Cannot parse resource download id")
+            return
+        entry["dataId"] = match.group(4)
+        if args.list_only:
+            entry["status"] = "discovered"
+            return
+        raw = page.evaluate(JS_DOWNLOAD, [entry["dataId"], str(int(time.time() * 1000))])
+        payload = json.loads(raw)
+        url = payload.get("dataUrl") if isinstance(payload, dict) else None
     classified = resource_entry({"name": row.get("name"), "url": url}, args.include_video)
     entry.update(classified)
     if entry["status"] != "discovered":
+        return
+    if args.list_only:
         return
     entry.update(status="failed", error="Download interrupted before completion")
     prefix = safe_name(label, "") if label else ""
