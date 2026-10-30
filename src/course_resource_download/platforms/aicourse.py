@@ -8,6 +8,7 @@ Those field semantics are observed behavior, not a documented platform API.
 import argparse
 import json
 import os
+import re
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from ..common import (
@@ -226,11 +227,21 @@ def resource_entry(resource, include_video=False):
     if not isinstance(url, str):
         entry.update(status="failed", error="Resource URL must be a string")
         return entry
+    hint = resource.get("extension")
+    hint = hint.lower() if isinstance(hint, str) and hint.startswith(".") else ""
     try:
         parsed = urlsplit(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        if parsed.scheme in {"http", "https"}:
+            if not parsed.hostname:
+                raise ValueError("Resource URL must be an absolute HTTP(S) URL")
+            ext = os.path.splitext(parsed.path)[1].lower() or hint
+        elif hint and re.fullmatch(r"[a-z][a-z0-9+.-]*:[^\s/]+", url):
+            # Stable platform identity such as ``docid:123``: the adapter
+            # resolves the real URL at download time, so the extension hint is
+            # the only classification signal available here.
+            ext = hint
+        else:
             raise ValueError("Resource URL must be an absolute HTTP(S) URL")
-        ext = os.path.splitext(parsed.path)[1].lower()
     except ValueError as exc:
         entry.update(status="failed", error=safe_error(exc))
         return entry
@@ -251,7 +262,12 @@ def resource_entry(resource, include_video=False):
             name if isinstance(name, str) and name else os.path.basename(parsed.path)
         )
         if not filename.lower().endswith(ext):
-            filename = os.path.splitext(filename)[0] + ext
+            # Only a real media/document suffix is replaced. Section labels such
+            # as "1.1 螺纹" contain dots that are not extensions, and splitting
+            # on the last dot would truncate them to "1".
+            current = os.path.splitext(filename)[1].lower()
+            stem = filename[: -len(current)] if current in DOC_EXT | VIDEO_EXT else filename
+            filename = stem + ext
         entry.update(status="discovered", file=filename)
     return entry
 

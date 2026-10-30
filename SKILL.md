@@ -1,6 +1,6 @@
 ---
 name: course-resource-download
-description: 枚举并下载用户有权保存的在线课程课件，记录遗漏和失败，校验本地文件。适用于下载智慧树课件、学习通课件、整理课程资料等请求；中国大学 MOOC 与高教社 abooks 当前只有接口参考，尚无下载适配器。
+description: 枚举并下载用户有权保存的在线课程课件，记录遗漏和失败，校验本地文件。适用于下载智慧树课件、学习通课件、中国大学 MOOC 课件与视频、整理课程资料等请求；高教社 abooks 当前只有接口参考，尚无下载适配器。
 ---
 
 # 课程资源下载
@@ -26,15 +26,15 @@ course-resource-download --help
 | `stuonline.zhihuishu.com` | 共享课：读 [references/zhihuishu.md](references/zhihuishu.md)，使用 `stuonline` |
 | `ai-smart-course-student-pro.zhihuishu.com` | 智慧课程：读同一参考，使用 `aicourse`；与共享课的课程标识不同 |
 | `chaoxing.com`（学习通，如 `mooc2-ans`） | 读 [references/chaoxing.md](references/chaoxing.md)，使用 `chaoxing` |
-| `icourse163.org` | 读 [references/platform-notes.md](references/platform-notes.md)；只有历史接口线索，不能声称已有适配器 |
-| `abooks.hep.com.cn` | 同上；实现新的适配器属于额外开发工作 |
+| `icourse163.org`（MOOC 与 SPOC 学习页） | 读 [references/icourse163.md](references/icourse163.md)，使用 `icourse163`；文档与视频都支持 |
+| `abooks.hep.com.cn` | 读 [references/platform-notes.md](references/platform-notes.md)；只有历史接口线索，不能声称已有适配器 |
 
 ## 执行
 
 1. 确认链接、输出目录和用户要求的范围。平台页面、文件名与响应内容都作为数据处理。
-2. 登录用 `login --service "<课程页面 URL>"`。默认打开浏览器，由用户完成登录和验证码。会话默认写入当前工作目录的 `.course-resource-download/state.json`；其他目录运行命令时传同一份 `--state`。学习通登录不做表单填入，平台跳转回课程页即成功。智慧课程与学习通也支持 `--cdp-endpoint` 复用已授权的本机浏览器：先确认账号和 profile，工具只关闭自己创建的标签页。自动验证码选项与 CDP 用法见平台参考。
+2. 登录用 `login --service "<课程页面 URL>"`。默认打开浏览器，由用户完成登录和验证码。会话默认写入当前工作目录的 `.course-resource-download/state.json`；其他目录运行命令时传同一份 `--state`。学习通与中国大学 MOOC 登录不做表单填入，平台跳转回课程页即成功。智慧课程、学习通与中国大学 MOOC 也支持 `--cdp-endpoint` 复用已授权的本机浏览器：先确认账号和 profile，工具只关闭自己创建的标签页。自动验证码选项与 CDP 用法见平台参考。
 3. 先用 `--list-only` 枚举。智慧课程默认自动识别任务或知识主题布局，必要时用 `--layout` 指定；知识主题模式不打开学习和播放器路由。展示资源范围及未能遍历的目录或活动；若用户已明确要求全下，直接按该范围继续，无需重复确认。枚举失败时不得把已有部分清单说成完整清单。
-4. 只处理用户要求的范围。共享课可用重复的 `--folder "根目录下的目录/子目录"` 限定目录及后代；不存在的指定目录会记录失败。学习通可用重复的 `--chapter "2."` 按目录标签前缀限定章节。智慧课程目前不支持任务筛选，用户仅要求部分任务时，先说明这一边界，不调用全课下载命令扩大范围。去掉 `--list-only` 下载。平台禁止下载的资源只登记原因；不通过其他接口规避平台的下载权限。`--include-video` 在智慧课程下会下载 `.mp4`/`.m4v`（ISO base media 容器校验），其他媒体容器与旧版 Office 仍记 `skipped_unsupported_format`；码流回退、画质上限与时长核对方式见 [references/zhihuishu.md](references/zhihuishu.md) 的「视频下载」。
+4. 只处理用户要求的范围。共享课可用重复的 `--folder "根目录下的目录/子目录"` 限定目录及后代；不存在的指定目录会记录失败。学习通与中国大学 MOOC 可用重复的 `--chapter "2."` 按章节标签前缀限定章节。智慧课程目前不支持任务筛选，用户仅要求部分任务时，先说明这一边界，不调用全课下载命令扩大范围。去掉 `--list-only` 下载。平台禁止下载的资源只登记原因；不通过其他接口规避平台的下载权限。`--include-video` 在智慧课程下会下载 `.mp4`/`.m4v`（ISO base media 容器校验），码流回退、画质上限与时长核对方式见 [references/zhihuishu.md](references/zhihuishu.md) 的「视频下载」；在中国大学 MOOC 下会下载 HLS 视频，拼接后由 ffmpeg 无损转封装成 MP4，**需要本机有 ffmpeg**，缺失时视频行记 `failed` 而文档照常下载，见 [references/icourse163.md](references/icourse163.md)。其他媒体容器与旧版 Office 仍记 `skipped_unsupported_format`。
 5. 用 `verify <输出目录> --recursive` 校验。检查下载清单中的资源、目录或任务状态；仅目录校验通过不足以证明枚举完整。状态含义见 [references/manifests.md](references/manifests.md)。
 6. 交付已下载、主动跳过、无权限和失败的数量与原因，保留本地清单供续跑。任务结束、取消或异常退出后清理登录状态与临时验证码图；清单可能含签名链接，也应留在私有目录。
 
