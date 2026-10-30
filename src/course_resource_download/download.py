@@ -162,6 +162,19 @@ def fetch(url, referer=None, timeout=180, max_bytes=None):
     return b"".join(chunks)
 
 
+def stream_to(url, write, referer=None, timeout=180, max_bytes=None, chunk=1 << 20):
+    """Stream one response into ``write`` under the same limits as a download.
+
+    Callers that assemble a file from several responses (HLS segments) need the
+    transfer rules without the single-file validation step; the assembled result
+    is validated by the caller before publication.
+    """
+    limit = _parameters(timeout, max_bytes, DEFAULT_DOWNLOAD_LIMIT, chunk)
+    validate_url(url)
+    with _open(url, referer, timeout) as response:
+        return _transfer(response, write, limit, chunk)
+
+
 def download_atomic(url, dest, referer=None, timeout=180, max_bytes=None, chunk=1 << 20):
     """Stream, fsync, verify by destination suffix, then atomically replace.
 

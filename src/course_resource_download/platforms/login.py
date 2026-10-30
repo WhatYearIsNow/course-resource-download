@@ -51,12 +51,14 @@ def login_error(exc, phone=None, password=None):
 
 
 def service_kind(hostname):
-    """Return 'zhihuishu', 'chaoxing', or None for a supported login service host."""
+    """Return the supported login service kind for a host, or None."""
     host = hostname or ""
     if host == "zhihuishu.com" or host.endswith(".zhihuishu.com"):
         return "zhihuishu"
     if host == "chaoxing.com" or host.endswith(".chaoxing.com"):
         return "chaoxing"
+    if host == "icourse163.org" or host.endswith(".icourse163.org"):
+        return "icourse163"
     return None
 
 
@@ -254,11 +256,13 @@ def main(argv=None):
         parser.error("--service is not a valid URL")
     kind = service_kind(service.hostname)
     if service.scheme != "https" or not service.hostname or kind is None:
-        parser.error("--service must be an HTTPS Zhihuishu or Chaoxing URL")
-    if kind == "chaoxing" and (args.auto_captcha or args.phone or args.pwd or args.credentials):
+        parser.error("--service must be an HTTPS Zhihuishu, Chaoxing or icourse163 URL")
+    if kind in {"chaoxing", "icourse163"} and (
+        args.auto_captcha or args.phone or args.pwd or args.credentials
+    ):
         parser.error(
             "Credential filling and auto-captcha apply to Zhihuishu only; "
-            "complete the Chaoxing login manually"
+            "complete the " + kind + " login manually"
         )
     if os.path.exists(args.state) and not args.overwrite_state:
         print("State file already exists; select a different path or use --overwrite-state")
@@ -299,7 +303,7 @@ def main(argv=None):
                         "Object.defineProperty(navigator,'webdriver',{get:()=>false});"
                     )
                     page = context.new_page()
-                    if kind == "chaoxing":
+                    if kind in {"chaoxing", "icourse163"}:
                         # The platform redirects to its own passport and back to
                         # the service page; the login form itself is never touched.
                         page.goto(args.service, wait_until="domcontentloaded", timeout=60000)

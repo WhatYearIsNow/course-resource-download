@@ -12,6 +12,10 @@ COMMANDS = {
     "stuonline": ("platforms.stuonline", "Discover or download shared-course documents"),
     "aicourse": ("platforms.aicourse", "Discover or download AI-course documents"),
     "chaoxing": ("platforms.chaoxing", "Discover or download Chaoxing (Xuexitong) documents"),
+    "icourse163": (
+        "platforms.icourse163",
+        "Discover or download icourse163 (中国大学MOOC) documents and videos",
+    ),
     "verify": ("verify", "Verify local downloaded files"),
 }
 

@@ -2,15 +2,7 @@
 
 以下信息来自旧版 skill 的操作记录，尚未对当前平台重新验证，也没有对应 CLI 下载适配器。它们只供未来调研和实现时定位，不能作为“已支持”或“已测试”的证据。
 
-## 中国大学 MOOC / icourse163
-
-历史课程数据使用 DWR 接口。曾观察到：
-
-- `courseBean.getLastLearnedMocTermDto.rpc` 返回课程树相关数据。
-- `courseBean.getLessonUnitLearnVo.dwr` 的文档单元含 `textUrl` 与 `textPages`。
-- `textUrl` 可能是带签名的下载链接，不能假定永久有效。
-
-未来实现应先确认课程树、文档单元的可访问范围与真实下载权限，再分别测试枚举、签名链接失效和文件验证。不要把视频单元数量当作课件数量，也不要宣称现有智慧树适配器能处理该平台。
+中国大学 MOOC / icourse163 已实现适配器，接口与边界见 [icourse163.md](icourse163.md)。
 
 ## 高教社 abooks
 
