@@ -23,6 +23,38 @@ def file_row(**kwargs):
     }
 
 
+def video_row(**kwargs):
+    return {
+        "fid": None,
+        "name": "Clip",
+        "ftype": "mp4",
+        "opid": "14494358",
+        "candownload": "0",
+        "onclick": (
+            "tm_data_show_proxy(this,14494358,'mp4','mp4',"
+            "'http://video.zhihuishu.com/zhs/onlineschool/COURSE_FOLDER/201708/a.mp4','x')"
+        ),
+        **kwargs,
+    }
+
+
+class CountingPage:
+    """Minimal page whose data-row count follows a scripted sequence."""
+
+    def __init__(self, counts):
+        self.counts = list(counts)
+        self.waits = 0
+
+    def wait_for_selector(self, *args, **kwargs):
+        return None
+
+    def evaluate(self, script):
+        return self.counts.pop(0) if len(self.counts) > 1 else self.counts[0]
+
+    def wait_for_timeout(self, milliseconds):
+        self.waits += 1
+
+
 class FolderContracts(unittest.TestCase):
     def args(self, **kwargs):
         return SimpleNamespace(
@@ -53,9 +85,23 @@ class FolderContracts(unittest.TestCase):
         page = Mock(url="https://stuonline.zhihuishu.com/course")
         page.evaluate.side_effect = ["same-table", True]
         page.wait_for_function.side_effect = TimeoutError("Folder table unchanged")
-        with self.assertRaises(TimeoutError):
+        with patch.object(stu, "wait_for_table"), self.assertRaises(TimeoutError):
             stu.open_folder(page, page.url, ["child"])
         page.wait_for_function.assert_called_once()
+
+    def test_ajax_filled_table_is_waited_for(self):
+        page = CountingPage([1, 31, 31, 31])
+        self.assertEqual(stu.wait_for_table(page), 31)
+        self.assertEqual(page.waits, 3)
+
+    def test_empty_folder_settles_at_zero(self):
+        page = CountingPage([0, 0, 0])
+        self.assertEqual(stu.wait_for_table(page), 0)
+
+    def test_header_row_alone_is_not_a_material_table(self):
+        # A page that never grows past the header must not be read as populated.
+        page = CountingPage([0])
+        self.assertEqual(stu.wait_for_table(page, timeout_ms=1), 0)
 
     def test_permission_zero_allows_metadata_request(self):
         page = Mock()
@@ -65,16 +111,80 @@ class FolderContracts(unittest.TestCase):
         self.assertEqual(entry["status"], "skipped_non_document")
         page.evaluate.assert_called_once()
 
-    def test_actual_url_overrides_label_with_include_video(self):
+    def test_video_row_uses_the_media_url_not_a_download_id(self):
         page = Mock()
-        page.evaluate.return_value = json.dumps({"dataUrl": "https://example.invalid/a.bin"})
         entry = {}
-        with patch.object(stu, "download_atomic") as download:
+        stu.process_file(
+            page,
+            video_row(),
+            "",
+            "unused",
+            self.args(include_video=True, list_only=True),
+            {},
+            entry,
+        )
+        self.assertEqual(entry["status"], "discovered")
+        self.assertEqual(
+            entry["url"], "http://video.zhihuishu.com/zhs/onlineschool/COURSE_FOLDER/201708/a.mp4"
+        )
+        self.assertEqual(entry["file"], "Clip.mp4")
+        page.evaluate.assert_not_called()
+
+    def test_video_download_uses_the_media_url(self):
+        page = Mock()
+        entry = {}
+        with (
+            tempfile.TemporaryDirectory(dir=".") as temporary,
+            patch.object(stu, "download_atomic", return_value=10) as download,
+            patch.object(stu, "is_usable", return_value=True),
+        ):
             stu.process_file(
-                page, file_row(ftype="mp4"), "", "unused", self.args(include_video=True), {}, entry
+                page, video_row(), "", temporary, self.args(include_video=True), {}, entry
             )
-        self.assertEqual(entry["status"], "skipped_non_document")
-        download.assert_not_called()
+        self.assertEqual(entry["status"], "ok")
+        self.assertEqual(
+            download.call_args.args[0],
+            "http://video.zhihuishu.com/zhs/onlineschool/COURSE_FOLDER/201708/a.mp4",
+        )
+        page.evaluate.assert_not_called()
+
+    def test_video_without_a_media_url_is_failed(self):
+        page = Mock()
+        entry = {}
+        stu.process_file(
+            page,
+            video_row(onclick="tm_data_show_proxy(this,1,'mp4','mp4')"),
+            "",
+            "unused",
+            self.args(include_video=True),
+            {},
+            entry,
+        )
+        self.assertEqual(entry["status"], "failed")
+        self.assertIn("video URL", entry["error"])
+        page.evaluate.assert_not_called()
+
+    def test_avi_video_is_skipped_as_unsupported(self):
+        page = Mock()
+        entry = {}
+        stu.process_file(
+            page,
+            video_row(
+                ftype="avi",
+                name="Clip.avi",
+                onclick=(
+                    "tm_data_show_proxy(this,14494358,'mp4','avi',"
+                    "'http://video.zhihuishu.com/zhs/onlineschool/COURSE_FOLDER/201708/a.avi','x')"
+                ),
+            ),
+            "",
+            "unused",
+            self.args(include_video=True),
+            {},
+            entry,
+        )
+        self.assertEqual(entry["status"], "skipped_unsupported_format")
+        page.evaluate.assert_not_called()
 
     def test_missing_url_is_failed(self):
         page = Mock()

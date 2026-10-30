@@ -46,7 +46,9 @@ course-resource-download stuonline --url "<共享课 stuIndexV2 URL>" --out ./do
 - 历史页面的 `candownload=1` 对学生表示禁止下载，`0` 表示可下载，不能按字段名猜测语义。当前适配器据此记录权限拒绝；页面改版需核对实际按钮与授权行为。
 - 文件夹行上的点击可能触发右键菜单。历史入口是文件夹内的 `a.teacher-file-a` 与页面的 `openFolder`，不能将任意行点击成功当作已进入目录。
 - 重新导航并重放文件夹路径时，要检查登录重定向和文件表格是否存在；读不到表格不能当作空目录。
+- **课件表格是 AJAX 填充的**：`domcontentloaded` 时只有表头一个 `tr`，数据行随后才插入（实测约 500 ms，31 行）。只等 `tr` 出现会读到空表并把目录误记成 `ok`；必须等数据行数量稳定（`tr[fid], tr.tm-file`），空目录稳定在 0。
 - 下载直链来自页面所使用的 `downloadMaterial1` 响应。历史 `filePreviewIframe1(...)` 第三个参数是数据标识。页面 `jsonPath` 与接口响应均需按运行时数据读取。
+- **视频行没有下载标识**：其 `onclick` 是 `tm_data_show_proxy(this, opid, '<容器>', '<扩展名>', '<直链>', …)`，直链本身就在参数里，不需要调 `downloadMaterial1`。`.mp4`/`.m4v` 走 MP4 容器校验，`.avi` 等记 `skipped_unsupported_format`。直链可能已经失效（返回 404 且 OSS 报 `NoSuchKey`），此时按 `failed` 如实记录，不要当成解析失败。
 - 文件夹路径或资源名不是可信本地路径。由公共工具生成安全文件名，并对同名不同来源进行区分。
 
 每个访问目录应在清单 `folders` 中留下成功或失败记录。单个目录失败可保留其他目录结果，但整轮不能报告为完整成功。
