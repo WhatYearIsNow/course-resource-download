@@ -1,6 +1,7 @@
 """Offline Chaoxing adapter contracts: no live service, credential or browser access."""
 
 import json
+import struct
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -92,6 +93,43 @@ def text_server():
         worker.join(timeout=5)
 
 
+@pytest.fixture
+def mp4_server():
+    """Serve a structurally valid MP4 so the container check can pass."""
+    body = (
+        struct.pack(">I", 16)
+        + b"ftypisom"
+        + bytes(4)
+        + struct.pack(">I", 8)
+        + b"moov"
+        + struct.pack(">I", 16)
+        + b"mdat"
+        + bytes(8)
+    )
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            seen.append({"path": self.path, "referer": self.headers.get("Referer")})
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", seen
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+
+
 class TestClassification:
     def test_document_is_discovered_with_safe_name(self):
         entry = cx.classify_status(status_body(filename="a/b:c.pptx"))
@@ -103,7 +141,9 @@ class TestClassification:
         "filename, include, expected",
         [
             ("video.mp4", False, "skipped_video"),
-            ("video.mp4", True, "skipped_unsupported_format"),
+            ("video.mp4", True, "discovered"),
+            ("video.m4v", True, "discovered"),
+            ("video.mkv", True, "skipped_unsupported_format"),
             ("old.ppt", False, "skipped_unsupported_format"),
             ("archive.zip", False, "skipped_non_document"),
         ],
@@ -111,6 +151,14 @@ class TestClassification:
     def test_excluded_types(self, filename, include, expected):
         entry = cx.classify_status(status_body(filename=filename), include_video=include)
         assert entry["status"] == expected
+
+    def test_video_keeps_its_own_name_and_identity(self):
+        entry = cx.classify_status(
+            status_body(filename="How to Write a Killer resume.mp4"), include_video=True
+        )
+        assert entry["status"] == "discovered"
+        assert entry["file"] == "How to Write a Killer resume.mp4"
+        assert entry["url"] == "objectid:" + HEX1
 
     def test_missing_download_is_permission_denied(self):
         assert cx.classify_status(status_body(download=None))["status"] == "permission_denied"
@@ -213,7 +261,7 @@ class TestTraversal:
             page,
             plan,
             cx.BASE_MOOC1,
-            SimpleNamespace(),
+            SimpleNamespace(include_video=False),
             entries,
             store,
             signed,
@@ -243,10 +291,35 @@ class TestTraversal:
         ]
         entries, store, signed, records = [], {}, {}, []
         cx.visit_chapters(
-            page, plan, cx.BASE_MOOC1, SimpleNamespace(), entries, store, signed, records
+            page,
+            plan,
+            cx.BASE_MOOC1,
+            SimpleNamespace(include_video=False),
+            entries,
+            store,
+            signed,
+            records,
         )
         assert entries[0]["objectid"] == HEX1
         assert signed["objectid:" + HEX1] == doc["download"]
+
+    def test_include_video_reaches_classification(self):
+        bodies, _ = self.bodies()
+        page = FakePage(bodies)
+        plan = self.make_plan()
+        entries, store, signed, records = [], {}, {}, []
+        cx.visit_chapters(
+            page,
+            plan,
+            cx.BASE_MOOC1,
+            SimpleNamespace(include_video=True),
+            entries,
+            store,
+            signed,
+            records,
+        )
+        assert [entry["status"] for entry in entries] == ["discovered", "discovered"]
+        assert "objectid:" + HEX2 in signed
 
     def test_login_expiry_fails_node_and_continues(self):
         bodies, _ = self.bodies()
@@ -254,7 +327,14 @@ class TestTraversal:
         plan = self.make_plan(labels=("First", "Second"))
         entries, store, signed, records = [], {}, {}, []
         cx.visit_chapters(
-            page, plan, cx.BASE_MOOC1, SimpleNamespace(), entries, store, signed, records
+            page,
+            plan,
+            cx.BASE_MOOC1,
+            SimpleNamespace(include_video=False),
+            entries,
+            store,
+            signed,
+            records,
         )
         assert records[0]["status"] == "failed"
         assert "expired" in records[0]["reason"].lower()
@@ -280,7 +360,14 @@ class TestTraversal:
         ]
         entries, store, signed, records = [], {}, {}, []
         cx.visit_chapters(
-            page, plan, cx.BASE_MOOC1, SimpleNamespace(), entries, store, signed, records
+            page,
+            plan,
+            cx.BASE_MOOC1,
+            SimpleNamespace(include_video=False),
+            entries,
+            store,
+            signed,
+            records,
         )
         assert records[0]["status"] == "ok"
         assert entries[0]["status"] == "failed"
@@ -310,6 +397,26 @@ class TestDownload:
         assert (tmp_path / entry["file"]).read_bytes() == b"hello course\n"
         assert seen[0]["referer"] == cx.REFERER
         assert checkpoints
+
+    def test_video_is_downloaded_with_the_chaoxing_referer(self, tmp_path, mp4_server):
+        base, seen = mp4_server
+        body = status_body(filename="How to Write a Killer resume.mp4", download=base + "/v.mp4")
+        entry = cx.classify_status(body, include_video=True)
+        assert entry["status"] == "discovered"
+        args = SimpleNamespace(out=str(tmp_path), include_video=True, list_only=False)
+        cx.download_entries([entry], {entry["url"]: body["download"]}, args, {})
+        assert entry["status"] == "ok"
+        assert (tmp_path / "How to Write a Killer resume.mp4").exists()
+        assert seen[0]["referer"] == cx.REFERER
+
+    def test_video_without_the_flag_is_never_requested(self, tmp_path, mp4_server):
+        base, seen = mp4_server
+        body = status_body(filename="talk.mp4", download=base + "/v.mp4")
+        entry = cx.classify_status(body, include_video=False)
+        args = SimpleNamespace(out=str(tmp_path), include_video=False, list_only=False)
+        cx.download_entries([entry], {entry["url"]: body["download"]}, args, {})
+        assert entry["status"] == "skipped_video"
+        assert seen == []
 
     def test_repeated_run_reuses_verified_file(self, tmp_path, text_server):
         base, seen = text_server
