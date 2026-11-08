@@ -79,20 +79,35 @@ def wait_for_login(page, service, timeout):
 
 
 def prepare_login(page, login_url, phone, password):
+    """Fill the current Element-UI login form (selectors validated 2026-10-30)."""
     page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
     if phone:
-        page.get_by_placeholder("请输入手机号或用户名").fill(phone)
+        mobile = page.locator('input[name="mobile"]')
+        if mobile.count():
+            mobile.first.fill(phone)
+        else:  # Fallback for an older layout.
+            page.get_by_placeholder("请输入手机号或用户名").fill(phone)
     if password:
-        page.get_by_placeholder("请输入密码").fill(password)
-    # Use semantic controls only. Unknown custom widgets remain for the user.
-    agreement = page.get_by_role("checkbox")
-    if agreement.count() == 1:
+        pwd = page.locator('input[type="password"]')
+        if pwd.count():
+            pwd.first.fill(password)
+        else:
+            page.get_by_placeholder("请输入密码").fill(password)
+    # The privacy agreement is a styled Element-UI checkbox whose label embeds a
+    # protocol link - clicking the label navigates to the agreement page, so
+    # target the visual box only.
+    agreement = page.locator(".privacy-checkbox .el-checkbox__inner")
+    if agreement.count():
         try:
-            agreement.check(timeout=2000)
+            agreement.first.click(timeout=2000)
         except Exception:
             pass
     if phone and password:
-        page.get_by_text("登录", exact=True).last.click()
+        button = page.locator(".el-button--primary, button:has-text('登录')").first
+        try:
+            button.click(timeout=3000)
+        except Exception:
+            page.get_by_text("登录", exact=True).last.click()
 
 
 class ChallengeCapture:
@@ -107,14 +122,15 @@ class ChallengeCapture:
                 self.body = None
 
 
-def find_gap(panel_png, front_png, current_left, image_width):
-    """Optional template matcher, imported only by --auto-captcha execution."""
+def find_gap_in_bg(bg_png, front_png):
+    """Locate the gap hole by matching the piece texture against the challenge
+    background image (same challenge response, same pixel scale)."""
     import cv2
     import numpy as np
 
-    panel = cv2.imdecode(np.fromfile(panel_png, dtype=np.uint8), cv2.IMREAD_COLOR)
+    bg = cv2.imdecode(np.fromfile(bg_png, dtype=np.uint8), cv2.IMREAD_COLOR)
     front = cv2.imdecode(np.fromfile(front_png, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
-    if panel is None or front is None or front.ndim != 3 or front.shape[2] != 4:
+    if bg is None or front is None or front.ndim != 3 or front.shape[2] != 4:
         raise ValueError("Invalid challenge image")
     alpha = front[:, :, 3]
     ys, xs = np.where(alpha > 10)
@@ -123,79 +139,70 @@ def find_gap(panel_png, front_png, current_left, image_width):
     x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
     piece = front[y0:y1, x0:x1, :3]
     mask = (alpha[y0:y1, x0:x1] > 10).astype(np.uint8) * 255
-    scale = image_width / 480.0  # Observed original challenge canvas width.
-    width = max(1, int(round(piece.shape[1] * scale)))
-    height = max(1, int(round(piece.shape[0] * scale)))
-    if width > panel.shape[1] or height > panel.shape[0]:
-        raise ValueError("Challenge dimensions do not match")
-    piece = cv2.resize(piece, (width, height), interpolation=cv2.INTER_AREA)
-    mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
     match = cv2.matchTemplate(
-        cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY),
+        cv2.cvtColor(bg, cv2.COLOR_BGR2GRAY),
         cv2.cvtColor(piece, cv2.COLOR_BGR2GRAY),
         cv2.TM_CCOEFF_NORMED,
         mask=mask,
     )
     match = np.nan_to_num(match, nan=-1, posinf=-1, neginf=-1)
-    lo, hi = (
-        max(0, int(current_left - width - 6)),
-        min(match.shape[1], int(current_left + width + 6)),
-    )
-    if hi > lo:
-        match[:, lo:hi] = -1
     _, confidence, _, location = cv2.minMaxLoc(match)
-    return location[0], confidence
-
-
-def human_to(page, x, y, target_x, steps=30):
-    for step in range(1, steps + 1):
-        fraction = step / steps
-        eased = 1 - (1 - fraction) ** 2.2
-        page.mouse.move(x + (target_x - x) * eased, y + (step % 5 - 2) * 0.4)
-        page.wait_for_timeout(16)
+    return location[0], confidence, bg.shape[1], piece.shape[1]
 
 
 def solve_challenge(page, capture, temporary):
-    """Attempt the optional legacy slider solver; temporary files stay isolated."""
+    """Attempt the optional slider solver; temporary files stay isolated.
+
+    Both challenge images come from the same response JSON, so the piece
+    texture matches the baked-in hole at native resolution - no scaling guess.
+    """
     for _ in range(40):
         if capture.body:
             break
         page.wait_for_timeout(250)
     if not capture.body:
         return False
-    front_match = re.search(r'"front":\["([^\"]+)"', capture.body)
-    if not front_match:
+    front_match = re.search(r'"front":\["([^"]+)"', capture.body)
+    bg_match = re.search(r'"bg":\["([^"]+)"', capture.body)
+    if not front_match or not bg_match:
         return False
-    front_url = front_match.group(1).replace("\\/", "/")
-    if urlsplit(front_url).scheme != "https":
+    front_url = front_match.group(1).replace(chr(92) + "/", "/")
+    bg_url = bg_match.group(1).replace(chr(92) + "/", "/")
+    if urlsplit(front_url).scheme != "https" or urlsplit(bg_url).scheme != "https":
         raise ValueError("Challenge image URL must use HTTPS")
     front_path = os.path.join(temporary, "front.png")
-    content = fetch(front_url, timeout=15, max_bytes=8 * 1024 * 1024)
-    Path(front_path).write_bytes(content)
+    bg_path = os.path.join(temporary, "bg.png")
+    Path(front_path).write_bytes(fetch(front_url, timeout=15, max_bytes=8 * 1024 * 1024))
+    Path(bg_path).write_bytes(fetch(bg_url, timeout=15, max_bytes=8 * 1024 * 1024))
     slider = page.locator(".yidun_slider").bounding_box()
     background = page.locator(".yidun_bg-img").bounding_box()
     if not slider or not background:
         return False
     x = slider["x"] + slider["width"] / 2
     y = slider["y"] + slider["height"] / 2
+    gap_file_x, confidence, bg_file_width, piece_file_width = find_gap_in_bg(bg_path, front_path)
+    if confidence < 0.4:
+        return False
+    # File pixels -> CSS pixels (the element renders the file at bg width).
+    gap_css = gap_file_x * (background["width"] / bg_file_width)
+    # Full-range calibration (2026-11-08): piece position = drag distance - 18.
+    drag_total = min(max(gap_css + 18, 60), 345)
     page.mouse.move(x, y)
     page.mouse.down()
     try:
-        page.mouse.move(x + 30, y)
-        page.wait_for_timeout(150)
-        panel_path = os.path.join(temporary, "panel.png")
-        page.locator(".yidun_panel").screenshot(path=panel_path)
-        piece = page.locator(".yidun_jigsaw").bounding_box()
-        if not piece:
-            return False
-        current_left = piece["x"] - background["x"]
-        gap, confidence = find_gap(panel_path, front_path, current_left, background["width"])
-        if confidence < 0.55:
-            return False
-        human_to(page, x + 30, y, x + 30 + gap - current_left)
+        human_to(page, x, y, x + drag_total)
     finally:
         page.mouse.up()
     return True
+
+
+def human_to(page, x, y, target_x, steps=30):
+    """Human-like eased drag with slight vertical wobble."""
+    for step in range(1, steps + 1):
+        fraction = step / steps
+        eased = 1 - (1 - fraction) ** 2.2
+        page.mouse.move(x + (target_x - x) * eased, y + (step % 5 - 2) * 0.4)
+        page.wait_for_timeout(16)
 
 
 def save_state(context, path, overwrite=False):
