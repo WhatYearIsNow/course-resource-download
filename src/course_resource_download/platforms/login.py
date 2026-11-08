@@ -110,6 +110,48 @@ def prepare_login(page, login_url, phone, password):
             page.get_by_text("登录", exact=True).last.click()
 
 
+def prepare_chaoxing(page, phone, password):
+    """Fill the Chaoxing passport form (fields #phone / #pwd / #loginBtn)."""
+    page.locator("#phone").first.fill(phone)
+    page.locator("#pwd").first.fill(password)
+    page.locator("#loginBtn").first.click()
+
+
+def prepare_icourse163(page, phone, password):
+    """Open the MOOC login modal and fill via DOM events.
+
+    The modal inputs (e.g. #basic_phone) reject synthetic pointer actions, so
+    values are set with the native React setter and the button fires through
+    JS after the form has rendered.
+    """
+    page.locator(".navLoginBtn").first.click()
+    page.wait_for_selector("#basic_phone", timeout=15000, state="attached")
+    page.wait_for_timeout(800)
+    state = page.evaluate(
+        """([phone, pwd]) => {
+             const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+             const phoneInput = document.getElementById('basic_phone');
+             const pwdInput =
+               [...document.querySelectorAll('input[type=password]')].find(
+                 (i) => i.offsetWidth > 0 || i.offsetHeight > 0
+               ) || document.querySelector('input[placeholder*="密码"]');
+             if (!phoneInput || !pwdInput) return 'no inputs';
+             setter.call(phoneInput, phone);
+             phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
+             setter.call(pwdInput, pwd);
+             pwdInput.dispatchEvent(new Event('input', { bubbles: true }));
+             const btns = [...document.querySelectorAll('button, a, span, div')].filter(
+               (b) => b.offsetParent && b.textContent.trim().split(' ').join('') === '登录'
+             );
+             if (btns.length) btns[btns.length - 1].click();
+             return 'ok';
+           }""",
+        [phone, password],
+    )
+    if state != "ok":
+        raise RuntimeError("MOOC 登录表单未找到：" + state)
+
+
 class ChallengeCapture:
     def __init__(self):
         self.body = None
@@ -264,12 +306,10 @@ def main(argv=None):
     kind = service_kind(service.hostname)
     if service.scheme != "https" or not service.hostname or kind is None:
         parser.error("--service must be an HTTPS Zhihuishu, Chaoxing or icourse163 URL")
-    if kind in {"chaoxing", "icourse163"} and (
-        args.auto_captcha or args.phone or args.pwd or args.credentials
-    ):
+    if args.auto_captcha and kind != "zhihuishu":
         parser.error(
-            "Credential filling and auto-captcha apply to Zhihuishu only; "
-            "complete the " + kind + " login manually"
+            "--auto-captcha applies to Zhihuishu only; "
+            "complete the " + kind + " challenge manually if prompted"
         )
     if os.path.exists(args.state) and not args.overwrite_state:
         print("State file already exists; select a different path or use --overwrite-state")
@@ -311,12 +351,21 @@ def main(argv=None):
                     )
                     page = context.new_page()
                     if kind in {"chaoxing", "icourse163"}:
-                        # The platform redirects to its own passport and back to
-                        # the service page; the login form itself is never touched.
+                        # The platform redirects to its own passport/modal; fill
+                        # the form when credentials exist, otherwise manual.
                         page.goto(args.service, wait_until="domcontentloaded", timeout=60000)
-                        print(
-                            "Complete login in the browser window; the page returns to the course"
-                        )
+                        if phone and password:
+                            if kind == "chaoxing":
+                                prepare_chaoxing(page, phone, password)
+                            else:
+                                prepare_icourse163(page, phone, password)
+                            print(
+                                "Credentials submitted; complete any challenge in the window if prompted"
+                            )
+                        else:
+                            print(
+                                "Complete login in the browser window; the page returns to the course"
+                            )
                         success = wait_for_login(page, args.service, args.timeout)
                     elif args.auto_captcha:
                         capture = ChallengeCapture()

@@ -219,11 +219,12 @@ class LoginContracts(unittest.TestCase):
             with self.subTest(hostname=hostname):
                 self.assertEqual(login.service_kind(hostname), expected)
 
-    def test_chaoxing_credentials_are_rejected_without_browser(self):
-        for extra in (["--phone", "x"], ["--pwd", "x"], ["--auto-captcha"]):
-            with self.subTest(extra=extra), contextlib.redirect_stderr(io.StringIO()):
-                with self.assertRaises(SystemExit):
-                    login.main(["--service", "https://passport2.chaoxing.com/login", *extra])
+    def test_chaoxing_credentials_accepted_but_auto_captcha_rejected(self):
+        # Credential filling now covers Chaoxing; the legacy slider solver stays
+        # Zhihuishu-only (Chaoxing challenges are solved manually if prompted).
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                login.main(["--service", "https://passport2.chaoxing.com/login", "--auto-captcha"])
 
 
 if __name__ == "__main__":
